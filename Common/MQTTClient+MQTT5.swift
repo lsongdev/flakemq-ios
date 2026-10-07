@@ -1,4 +1,5 @@
 import CocoaMQTT
+import Foundation
 
 extension MQTTClient: CocoaMQTT5Delegate {
     func mqtt5(

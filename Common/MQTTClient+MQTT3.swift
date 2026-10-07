@@ -1,4 +1,5 @@
 import CocoaMQTT
+import Foundation
 
 extension MQTTClient: CocoaMQTTDelegate {
     func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
