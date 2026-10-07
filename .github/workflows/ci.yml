@@ -23,12 +23,18 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Resolve packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project FlakeMQ.xcodeproj
       - name: Build
         run: |
           xcodebuild \
             -project FlakeMQ.xcodeproj \
-            -target FlakeMQ \
+            -scheme FlakeMQ \
             -sdk iphonesimulator \
             -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
