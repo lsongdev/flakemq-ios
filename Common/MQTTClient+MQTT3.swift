@@ -1,70 +1,70 @@
-//
-//  Untitled.swift
-//  MQTTClient
-//
-//  Created by Lsong on 1/14/25.
-//
-import SwiftUI
 import CocoaMQTT
+import Foundation
 
-// MARK: - CocoaMQTTDelegate
 extension MQTTClient: CocoaMQTTDelegate {
     func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
+        guard isCurrent(mqtt) else { return }
+
         if ack == .accept {
-            connectionState = .connected
-            print("Connected to \(mqtt.host)")
+            setConnectionState(.connected)
             restoreSubscriptions()
         } else {
-            connectionState = .error("Connection failed: \(ack)")
+            setConnectionState(.error("Connection rejected: \(ack)"))
         }
     }
-    
-    func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {
-        print("MQTT3 消息已发布 - ID: \(id)")
-    }
-    
-    func mqtt(_ mqtt: CocoaMQTT, didPublishAck id: UInt16) {
-        print("MQTT3 消息发布确认 - ID: \(id)")
-    }
-    
+
+    func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {}
+
+    func mqtt(_ mqtt: CocoaMQTT, didPublishAck id: UInt16) {}
+
     func mqtt(_ mqtt: CocoaMQTT, didReceiveMessage message: CocoaMQTTMessage, id: UInt16) {
-        print("收到 MQTT3 消息 - Topic: \(message.topic), ID: \(id)")
-        
-        if let text = message.string {
-            print("消息内容: \(text)")
-            addMessage(id: id, topic: message.topic, payload: text)
-        }
+        guard isCurrent(mqtt) else { return }
+
+        addMessage(
+            packetId: id,
+            topic: message.topic,
+            payload: message.payload,
+            qos: Int(message.qos.rawValue),
+            retain: message.retained,
+            duplicate: message.duplicated
+        )
     }
-    
+
     func mqtt(_ mqtt: CocoaMQTT, didSubscribeTopics success: NSDictionary, failed: [String]) {
-        print("MQTT3 订阅结果 - 成功: \(success), 失败: \(failed)")
-        if !failed.isEmpty {
-            print("Failed to subscribe to topics: \(failed.joined(separator: ", "))")
-        } else {
-            print("Successfully subscribed to topics")
+        guard isCurrent(mqtt), !failed.isEmpty else { return }
+        setConnectionState(.error("Subscription failed: \(failed.joined(separator: ", "))"))
+    }
+
+    func mqtt(_ mqtt: CocoaMQTT, didUnsubscribeTopics topics: [String]) {}
+
+    func mqttDidPing(_ mqtt: CocoaMQTT) {}
+
+    func mqttDidReceivePong(_ mqtt: CocoaMQTT) {}
+
+    func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError error: Error?) {
+        guard isCurrent(mqtt), !isInErrorState else { return }
+        setConnectionState(.reconnecting(attempt: 0, delay: 0))
+    }
+
+    func mqtt(_ mqtt: CocoaMQTT, didStateChangeTo state: CocoaMQTTConnState) {
+        guard isCurrent(mqtt), !isInErrorState else { return }
+
+        switch state {
+        case .connecting:
+            setConnectionState(.connecting)
+        case .connected:
+            setConnectionState(.connected)
+        case .disconnected:
+            setConnectionState(.reconnecting(attempt: 0, delay: 0))
         }
     }
-    
-    func mqtt(_ mqtt: CocoaMQTT, didUnsubscribeTopics topics: [String]) {
-        print("MQTT3 取消订阅主题: \(topics)")
-    }
-    
-    func mqttDidPing(_ mqtt: CocoaMQTT) {
-        print("MQTT3 Ping")
-    }
-    
-    func mqttDidReceivePong(_ mqtt: CocoaMQTT) {
-        print("MQTT3 Pong")
-    }
-    
-    func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: (any Error)?) {
-        print("MQTT3 断开连接，错误: \(String(describing: err))")
-        DispatchQueue.main.async {
-            if let error = err {
-                self.connectionState = .error(error.localizedDescription)
-            } else {
-                self.connectionState = .disconnected
-            }
-        }
+
+    func mqtt(
+        _ mqtt: CocoaMQTT,
+        didScheduleReconnect attemptCount: UInt,
+        after interval: UInt16
+    ) {
+        guard isCurrent(mqtt), !isInErrorState else { return }
+        setConnectionState(.reconnecting(attempt: attemptCount, delay: interval))
     }
 }

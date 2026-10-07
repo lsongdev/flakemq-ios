@@ -1,22 +1,28 @@
-//
-//  SubscriptionView.swift
-//  MQTTClient
-//
-//  Created by Lsong on 1/14/25.
-//
 import SwiftUI
 
 struct SubscriptionView: View {
     let subscription: Subscription
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(subscription.name)
-                .font(.headline)
-            Text("QoS: \(subscription.qos)")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(subscription.name)
+                    .font(.headline)
+                    .fontDesign(.monospaced)
+
+                Text("QoS \(subscription.qos)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if subscription.name.contains("+") || subscription.name.contains("#") {
+                Image(systemName: "asterisk")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
     }
 }

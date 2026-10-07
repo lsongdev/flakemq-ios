@@ -1,95 +1,106 @@
 import SwiftUI
-import SwiftUIX
 
-// MARK: - Server Form View
 struct ServerFormView: View {
     @Environment(\.dismiss) private var dismiss
-    @State var formData: ServerDescription
+
+    @State private var formData: ServerDescription
+    private let isNew: Bool
     private let onSave: (ServerDescription) -> Void
-    
+
     init(
-        server: ServerDescription = ServerDescription.empty,
+        server: ServerDescription = .empty,
         onSave: @escaping (ServerDescription) -> Void
     ) {
+        _formData = State(initialValue: server)
+        isNew = server.host.isEmpty
         self.onSave = onSave
-        self.formData = server
     }
+
     var body: some View {
-            NavigationView {
-                Form {
-                    serverDetailsSection
-                    authenticationSection
-                    clientIdSection
-                }
-                .navigationTitle("Edit Server")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") {
-                            dismiss()
-                        }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save") {
-                            onSave(formData)
-                            dismiss()
-                        }
-                        .disabled(!formData.isValid)
-                    }
-                }
-            }
-        }
-        
-        private var serverDetailsSection: some View {
-            Section(header: Text("Server Details")) {
-                InputField("Name", text: $formData.name, placeholder: "(Optional)")
-                    .textInputAutocapitalization(.never)
-                
-                InputField("Hostname", text: $formData.host)
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                
-                InputField("Port", text: $formData.port)
-                    .keyboardType(.numberPad)
-                
-                Picker(selection: $formData.protocolVersion, label: Text("Version")) {
-                    ForEach(MQTTProtocolVersion.allCases, id: \.self) { version in
-                        Text(version.description).tag(version)
-                    }
-                }
-                
-                Toggle("Use TLS", isOn: $formData.useTLS)
-                
-                Toggle("Use WebSocket", isOn: $formData.useWebSocket)
-                
-                if formData.useWebSocket {
-                    InputField("WebSocket Path", text: $formData.webSocketPath)
-                        .autocapitalization(.none)
-                        .disableAutocorrection(true)
+        NavigationStack {
+            Form {
+                Section("Broker") {
+                    TextField("Name (optional)", text: $formData.name)
                         .textInputAutocapitalization(.never)
+
+                    TextField("Hostname or IP", text: $formData.host)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    HStack {
+                        TextField("Port", text: $formData.port)
+                            .keyboardType(.numberPad)
+
+                        if formData.portNumber == nil {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(.red)
+                        }
+                    }
+
+                    Picker("Protocol", selection: $formData.protocolVersion) {
+                        ForEach(MQTTProtocolVersion.allCases) { version in
+                            Text(version.description).tag(version)
+                        }
+                    }
+                }
+
+                Section {
+                    Toggle("TLS", isOn: $formData.useTLS)
+                    Toggle("WebSocket", isOn: $formData.useWebSocket)
+
+                    if formData.useWebSocket {
+                        TextField("WebSocket path", text: $formData.webSocketPath)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                    }
+
+                    LabeledContent("Endpoint", value: formData.endpointDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Transport")
+                } footer: {
+                    Text("Leave the port empty to use the transport default (1883, 8883, 80, or 443).")
+                }
+
+                Section {
+                    TextField("Username", text: $formData.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+
+                    SecureField("Password", text: $formData.password)
+                        .textContentType(.password)
+                } header: {
+                    Text("Authentication")
+                } footer: {
+                    Text("The password is stored in the iOS Keychain, not UserDefaults.")
+                }
+
+                Section {
+                    TextField("Client ID", text: $formData.clientId)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                } footer: {
+                    Text("A generated client ID is used by default. Change it only when your broker requires a stable identity.")
+                }
+            }
+            .navigationTitle(isNew ? "Add Broker" : "Edit Broker")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(formData)
+                        dismiss()
+                    }
+                    .disabled(!formData.isValid)
                 }
             }
         }
-        
-        private var authenticationSection: some View {
-            Section(header: Text("Authentication"), footer: Text("Leave blank if not required")) {
-                InputField("Username", text: $formData.username)
-                    .autocapitalization(.none)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                
-                InputField("Password", text: $formData.password)
-            }
-        }
-        
-        private var clientIdSection: some View {
-            Section(header: Text("Client Id")) {
-                InputField("Client ID", text: $formData.clientId, placeholder: "(Optional)")
-                    .autocapitalization(.none)
-                    .disableAutocorrection(true)
-                    .textInputAutocapitalization(.never)
-            }
-        }
+    }
 }

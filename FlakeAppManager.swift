@@ -1,121 +1,217 @@
-import SwiftUI
+import Combine
+import Foundation
+import Security
 import UserNotifications
 
-// MARK: - App Manager
 final class FlakeAppManager: ObservableObject {
-    static let shared: FlakeAppManager = .init()
-    
-    // MARK: - Published Properties
+    static let shared = FlakeAppManager()
+
     @Published private(set) var servers: [ServerDescription] = []
-    @State private var clients: [UUID: MQTTClient] = [:]
-    
+    @Published private(set) var notificationsEnabled: Bool
+
+    private var clients: [UUID: MQTTClient] = [:]
     private let storageKey = "servers"
-    
+    private let notificationsKey = "notifications-enabled"
+    private let credentials = CredentialStore()
+
+    init() {
+        notificationsEnabled = UserDefaults.standard.bool(forKey: notificationsKey)
+        loadServers()
+    }
+
     func getClient(for server: ServerDescription) -> MQTTClient {
-        if let existingClient = clients[server.id] {
-            return existingClient
+        if let client = clients[server.id] {
+            if client.server != server {
+                client.updateServer(server)
+            }
+            return client
         }
+
         let client = MQTTClient(server: server)
         clients[server.id] = client
         return client
     }
-    
-    // MARK: - Initialization
-    init() {
-        loadServers()
-        requestNotificationPermission()
+
+    func addServer(_ server: ServerDescription) {
+        guard server.isValid else { return }
+        servers.append(server)
+        saveServers()
     }
-    
-    // MARK: - Notification Methods
-    private func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if granted {
-                print("通知权限已获取")
-            } else if let error = error {
-                print("通知权限请求失败: \(error.localizedDescription)")
+
+    func removeServer(_ server: ServerDescription) {
+        removeServer(id: server.id)
+    }
+
+    func removeServer(id: UUID) {
+        clients.removeValue(forKey: id)?.disconnect()
+        credentials.removePassword(for: id)
+        servers.removeAll { $0.id == id }
+        saveServers()
+    }
+
+    func removeServers(ids: Set<UUID>) {
+        for id in ids {
+            clients.removeValue(forKey: id)?.disconnect()
+            credentials.removePassword(for: id)
+        }
+        servers.removeAll { ids.contains($0.id) }
+        saveServers()
+    }
+
+    func updateServer(_ server: ServerDescription) {
+        guard server.isValid,
+              let index = servers.firstIndex(where: { $0.id == server.id }) else {
+            return
+        }
+
+        servers[index] = server
+        credentials.setPassword(server.password, for: server.id)
+        clients[server.id]?.updateServer(server)
+        saveServers()
+    }
+
+    func setNotificationsEnabled(_ enabled: Bool) {
+        guard enabled else {
+            notificationsEnabled = false
+            UserDefaults.standard.set(false, forKey: notificationsKey)
+            return
+        }
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, _ in
+            DispatchQueue.main.async {
+                self?.notificationsEnabled = granted
+                UserDefaults.standard.set(granted, forKey: self?.notificationsKey ?? "notifications-enabled")
             }
         }
     }
-    
+
     func sendNotification(title: String, body: String) {
+        guard notificationsEnabled else { return }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = .default
-        
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request)
-    }
-    
-    // MARK: - Public Methods
-    func addServer(_ server: ServerDescription) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.servers.append(server)
-            self.saveServers()
-        }
-    }
-    
-    func removeServer(at indexSet: IndexSet) {
-        servers.remove(atOffsets: indexSet)
-        saveServers()
-    }
-    
-    func removeServer(index: Int) {
-        servers.remove(at: index)
-        saveServers()
-    }
-    
-    func removeServer(server: ServerDescription) {
-        removeServer(id: server.id)
-    }
-    
-    func removeServer(id: UUID) {
-        guard let index = servers.firstIndex(where: { $0.id == id }) else { return }
-        servers.remove(at: index)
-        saveServers()
-    }
-    
-    func updateServer(server: ServerDescription) {
-        guard let index = servers.firstIndex(where: { $0.id == server.id }) else { return }
-        servers[index] = server
-        saveServers()
-    }
-    
-    func addDemoServers() {
-        let topic = Subscription(name: "test")
-        addServer(ServerDescription(host: "broker.emqx.io", port: "1883", subscriptions: [topic]))
-        addServer(ServerDescription(host: "broker.hivemq.com", port: "1883", subscriptions: [topic]))
-    }
-}
 
-// MARK: - Private Methods
-extension FlakeAppManager {
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(
+                identifier: UUID().uuidString,
+                content: content,
+                trigger: nil
+            )
+        )
+    }
+
+    func addDemoServers() {
+        guard servers.isEmpty else { return }
+        let topic = Subscription(name: "test/#")
+        addServer(
+            ServerDescription(
+                name: "EMQX Public Broker",
+                host: "broker.emqx.io",
+                subscriptions: [topic]
+            )
+        )
+        addServer(
+            ServerDescription(
+                name: "HiveMQ Public Broker",
+                host: "broker.hivemq.com",
+                subscriptions: [topic]
+            )
+        )
+    }
+
     func loadServers() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let servers = try? JSONDecoder().decode([ServerDescription].self, from: data) else {
+              var decoded = try? JSONDecoder().decode([ServerDescription].self, from: data) else {
             return
         }
-        self.servers = servers
+
+        var migratedLegacyPassword = false
+
+        for index in decoded.indices {
+            let id = decoded[index].id
+
+            if !decoded[index].password.isEmpty {
+                credentials.setPassword(decoded[index].password, for: id)
+                migratedLegacyPassword = true
+            } else if let password = credentials.password(for: id) {
+                decoded[index].password = password
+            }
+        }
+
+        servers = decoded
+
+        if migratedLegacyPassword {
+            saveServers()
+        }
     }
-    
+
     func saveServers() {
+        for server in servers {
+            credentials.setPassword(server.password, for: server.id)
+        }
+
         guard let data = try? JSONEncoder().encode(servers) else {
-            print("Failed to encode servers")
             return
         }
+
         UserDefaults.standard.set(data, forKey: storageKey)
     }
-}
 
-// MARK: - App Information
-extension FlakeAppManager {
     var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
+
     var appName: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String
             ?? "FlakeMQ"
+    }
+}
+
+private struct CredentialStore {
+    private let service = Bundle.main.bundleIdentifier ?? "org.lsong.mqtt"
+
+    func password(for id: UUID) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: id.uuidString,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        var item: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+              let data = item as? Data else {
+            return nil
+        }
+
+        return String(data: data, encoding: .utf8)
+    }
+
+    func setPassword(_ password: String, for id: UUID) {
+        removePassword(for: id)
+        guard !password.isEmpty, let data = password.data(using: .utf8) else { return }
+
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: id.uuidString,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+            kSecValueData as String: data
+        ]
+
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    func removePassword(for id: UUID) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: id.uuidString
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }

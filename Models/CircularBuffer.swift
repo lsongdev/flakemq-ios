@@ -1,67 +1,70 @@
-//
-//  CircularBuffer.swift
-//  MQTTClient
-//
-//  Created by Lsong on 1/14/25.
-//
-
-struct CircularBuffer<Element> {
-    private var array: [Element]
-    private var maxSize: Int
-    
-    init(maxSize: Int = 50) {
-        self.maxSize = maxSize
-        self.array = []
-        self.array.reserveCapacity(maxSize)
-    }
-    
-    mutating func append(_ element: Element) {
-        if array.count >= maxSize {
-            array.removeFirst()
-        }
-        array.append(element)
-    }
-    
-    mutating func removeFirst() {
-        if !array.isEmpty {
-            array.removeFirst()
-        }
-    }
-    
-    var count: Int {
-        array.count
-    }
-    
-    var last: Element? {
-        array.last
-    }
-    
-    subscript(index: Int) -> Element {
-        array[index]
-    }
-    mutating func clear() {
-        self.array.removeAll()
-    }
-}
-
-// MARK: - Protocol Conformances
-extension CircularBuffer: RandomAccessCollection {
+struct CircularBuffer<Element>: RandomAccessCollection {
     typealias Index = Int
-    
-    var startIndex: Int { array.startIndex }
-    var endIndex: Int { array.endIndex }
-    
-    func index(after i: Int) -> Int {
-        array.index(after: i)
+
+    private var storage: [Element?]
+    private var head = 0
+    private(set) var count = 0
+    let capacity: Int
+
+    init(maxSize: Int = 1000) {
+        precondition(maxSize > 0)
+        capacity = maxSize
+        storage = Array(repeating: nil, count: maxSize)
     }
-    
-    func index(before i: Int) -> Int {
-        array.index(before: i)
+
+    var startIndex: Int { 0 }
+    var endIndex: Int { count }
+
+    subscript(position: Int) -> Element {
+        precondition(position >= 0 && position < count)
+        return storage[(head + position) % capacity]!
+    }
+
+    func index(after i: Int) -> Int { i + 1 }
+    func index(before i: Int) -> Int { i - 1 }
+
+    mutating func append(_ element: Element) {
+        if count < capacity {
+            storage[(head + count) % capacity] = element
+            count += 1
+        } else {
+            storage[head] = element
+            head = (head + 1) % capacity
+        }
+    }
+
+    mutating func removeFirst() {
+        guard count > 0 else { return }
+        storage[head] = nil
+        head = (head + 1) % capacity
+        count -= 1
+        if count == 0 {
+            head = 0
+        }
+    }
+
+    mutating func removeAll(where shouldRemove: (Element) -> Bool) {
+        let kept = filter { !shouldRemove($0) }
+        clear()
+        for element in kept {
+            append(element)
+        }
+    }
+
+    mutating func clear() {
+        storage = Array(repeating: nil, count: capacity)
+        head = 0
+        count = 0
+    }
+
+    var last: Element? {
+        guard count > 0 else { return nil }
+        return self[count - 1]
     }
 }
 
 extension CircularBuffer: Equatable where Element: Equatable {
-    static func == (lhs: CircularBuffer<Element>, rhs: CircularBuffer<Element>) -> Bool {
-        lhs.array == rhs.array
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        Array(lhs) == Array(rhs)
     }
 }

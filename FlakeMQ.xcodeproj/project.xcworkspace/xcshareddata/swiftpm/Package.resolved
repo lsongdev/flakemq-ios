@@ -1,13 +1,12 @@
 {
-  "originHash" : "7ea8b2aaaad409d76e9215e94b72388d692d92b87a0c9eac7cad7253f719e5a0",
   "pins" : [
     {
       "identity" : "cocoamqtt",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/emqx/CocoaMQTT",
       "state" : {
-        "revision" : "990303d3549d4284fadd6c83ff8480e6ab0b4d42",
-        "version" : "2.1.6"
+        "revision" : "4c5a9a68eac0a4eab74ba504981e5a839d7e7593",
+        "version" : "2.4.1"
       }
     },
     {
@@ -24,17 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/daltoniam/Starscream.git",
       "state" : {
-        "revision" : "a063fda2b8145a231953c20e7a646be254365396",
-        "version" : "3.1.2"
-      }
-    },
-    {
-      "identity" : "swift-uix",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/lsongdev/swift-uix.git",
-      "state" : {
-        "branch" : "master",
-        "revision" : "f0f16ccac291289e4ead944e8a80e25acd570794"
+        "revision" : "c6bfd1af48efcc9a9ad203665db12375ba6b145a",
+        "version" : "4.0.8"
       }
     }
   ],
