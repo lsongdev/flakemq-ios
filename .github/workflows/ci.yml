@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run core tests
+        run: |
+          swiftc \
+            Models/Subscription.swift \
+            Models/CircularBuffer.swift \
+            Models/ServerDescription.swift \
+            Tests/main.swift \
+            -o /tmp/flakemq-core-tests
+          /tmp/flakemq-core-tests
+
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          xcodebuild \
+            -project FlakeMQ.xcodeproj \
+            -target FlakeMQ \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -1,178 +1,293 @@
-//
-//  MQTTClientManager.swift
-//  MQTTClient
-//
-//  Created by Lsong on 1/14/25.
-//
-import SwiftUI
 import CocoaMQTT
 import CocoaMQTTWebSocket
+import Combine
+import Foundation
+import UIKit
 
-class MQTTClient: NSObject, ObservableObject {
-    private var client: Any? // Generic type to hold either CocoaMQTT or CocoaMQTT5
-    private var currentMessageId: UInt16 = 0
-    private let maxMessages: Int = 1000
-    @Published var server: ServerDescription
-    @Published var messages = CircularBuffer<Message>()
-    @Published var connectionState: ConnectionState = .disconnected
-    
+final class MQTTClient: NSObject, ObservableObject {
+    private enum Client {
+        case mqtt3(CocoaMQTT)
+        case mqtt5(CocoaMQTT5)
+    }
+
     enum ConnectionState: Equatable {
         case disconnected
         case connecting
+        case reconnecting(attempt: UInt, delay: UInt16)
         case connected
         case error(String)
-        
+
         var isConnected: Bool {
             if case .connected = self { return true }
             return false
         }
-        
+
+        var isActive: Bool {
+            switch self {
+            case .connecting, .reconnecting, .connected:
+                return true
+            case .disconnected, .error:
+                return false
+            }
+        }
+
         var canConnect: Bool {
             switch self {
-            case .disconnected, .error: return true
-            case .connecting, .connected: return false
+            case .disconnected, .error:
+                return true
+            case .connecting, .reconnecting, .connected:
+                return false
             }
         }
     }
-    
-    init(server: ServerDescription){
-        self.server = server
-    }
-    
-    func connect() {
-        connectionState = .connecting
-        switch server.protocolVersion {
-        case .mqtt3:
-            connectMQTT3(server)
-        case .mqtt5:
-            connectMQTT5(server)
-        }
-    }
-    
-    private func connectMQTT3(_ server: ServerDescription) {
-        let socket: CocoaMQTTSocketProtocol = server.useWebSocket ? CocoaMQTTWebSocket(uri: server.webSocketPath) : CocoaMQTTSocket()
-        let client = CocoaMQTT(clientID: server.clientId, host: server.host, port: server.portN, socket: socket)
-        client.username = server.username
-        client.password = server.password
-        client.enableSSL = server.useTLS
-        // client.allowUntrustCACertificate = true
-        client.autoReconnect = true
-        client.cleanSession = true
-        client.keepAlive = 600 // Increased from 120 to 600 seconds (10 minutes)
-        client.delegate = self
-    
-        if !client.connect() {
-            print("MQTT3 连接初始化失败")
-            connectionState = .error("Failed to initialize MQTT3 connection")
-        }
-        self.client = client
-    }
-    
-    private func connectMQTT5(_ server: ServerDescription) {
-        let socket: CocoaMQTTSocketProtocol
-        if server.useWebSocket {
-            socket = CocoaMQTTWebSocket(uri: "/mqtt")
-        } else {
-            socket = CocoaMQTTSocket()
-        }
-        let client = CocoaMQTT5(clientID: server.clientId, host: server.host, port: server.portN, socket: socket)
-        client.username = server.username
-        client.password = server.password
-        client.enableSSL = server.useTLS
-        client.autoReconnect = true
-        client.cleanSession = true
-        client.keepAlive = 600 // Increased from 120 to 600 seconds (10 minutes)
-//        client.allowUntrustCACertificate = true
-//        let connectProperties = MqttConnectProperties()
-//        connectProperties.topicAliasMaximum = 0
-//        connectProperties.sessionExpiryInterval = 0
-//        connectProperties.receiveMaximum = 100
-//        connectProperties.maximumPacketSize = 500
-//        client.connectProperties = connectProperties
-//        client.sslSettings = [kCFStreamSSLPeerName as String: server.host as NSObject]
-        
-        client.delegate = self
-        if !client.connect() {
-            print("MQTT5 连接初始化失败")
-            connectionState = .error("Failed to initialize MQTT5 connection")
-        }
-        self.client = client
-    }
-    
-    func disconnect() {
-        if let client = client as? CocoaMQTT {
-            client.disconnect()
-        } else if let client = client as? CocoaMQTT5 {
-            client.disconnect()
-        }
-        client = nil
-        connectionState = .disconnected
-    }
-    
-    func publish(to message: Message) {
-        // print("publish: \(topic) -> \(payload)")
-        let qos = CocoaMQTTQoS(rawValue: UInt8(message.qos)) ?? .qos1
-        if let client = client as? CocoaMQTT {
-            client.publish(message.topic, withString: message.payload, qos: qos, retained: message.retain)
-        } else if let client = client as? CocoaMQTT5 {
-            let properties = MqttPublishProperties()
-            client.publish(message.topic, withString: message.payload, retained: message.retain, properties: properties)
-        }
-    }
-    
-    func subscribe(to topic: String, qos: Int = 0) {
-        if let client = client as? CocoaMQTT {
-            client.subscribe(topic, qos: CocoaMQTTQoS(rawValue: UInt8(qos)) ?? .qos1)
-        } else if let client = client as? CocoaMQTT5 {
-            client.subscribe(topic, qos: CocoaMQTTQoS(rawValue: UInt8(qos)) ?? .qos1)
-        }
-    }
-    
-    func unsubscribe(from topic: String) {
-        if let client = client as? CocoaMQTT {
-            client.unsubscribe(topic)
-        } else if let client = client as? CocoaMQTT5 {
-            client.unsubscribe(topic)
-        }
-    }
-    
-    func addMessage(id: UInt16, topic: String, payload: String, qos: Int = 0) {
-        currentMessageId = currentMessageId + 1
-        messages.append(Message(id: currentMessageId, topic: topic, payload: payload))
-        if messages.count > maxMessages {
-            messages.removeFirst()
-        }
-        
-        // 发送通知
-        if UIApplication.shared.applicationState == .background {
-            FlakeAppManager.shared.sendNotification(
-                title: topic,
-                body: payload
-            )
-        }
-    }
-    
-    func restoreSubscriptions() {
-        for topic in server.subscriptions {
-            subscribe(to: topic.name, qos: topic.qos)
-        }
-    }
-}
 
-extension MQTTClient {
-    // Validate the server certificate
-    func mqtt5(_ mqtt5: CocoaMQTT5, didReceive trust: SecTrust, completionHandler: @escaping (Bool) -> Void) {
-        print("mqtt5 certificate verify: \(trust)")
-        completionHandler(true)
+    private var client: Client?
+
+    @Published private(set) var server: ServerDescription
+    @Published private(set) var messages = CircularBuffer<Message>(maxSize: 1000)
+    @Published private(set) var connectionState: ConnectionState = .disconnected
+
+    init(server: ServerDescription) {
+        self.server = server
+        super.init()
     }
-    // self signed delegate
-    func mqttUrlSession(_ mqtt: CocoaMQTT, didReceiveTrust trust: SecTrust, didReceiveChallenge challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void){
-        print("mqtt3 certificate verify: \(trust)")
-        if (challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust) {
-            completionHandler(URLSession.AuthChallengeDisposition.useCredential, URLCredential(trust: trust))
+
+    func updateServer(_ updatedServer: ServerDescription) {
+        let shouldReconnect =
+            connectionState.isActive &&
+            server.requiresReconnect(comparedTo: updatedServer)
+
+        server = updatedServer
+
+        if shouldReconnect {
+            disconnect()
+            connect()
+        }
+    }
+
+    func connect() {
+        guard connectionState.canConnect else { return }
+        guard server.isValid, let port = server.portNumber else {
+            connectionState = .error("Invalid broker configuration")
             return
         }
-        completionHandler(URLSession.AuthChallengeDisposition.cancelAuthenticationChallenge, nil)
 
+        tearDownClient()
+        connectionState = .connecting
+
+        switch server.protocolVersion {
+        case .mqtt3:
+            connectMQTT3(port: port)
+        case .mqtt5:
+            connectMQTT5(port: port)
+        }
+    }
+
+    private func connectMQTT3(port: UInt16) {
+        let socket: CocoaMQTTSocketProtocol = server.useWebSocket
+            ? CocoaMQTTWebSocket(uri: server.normalizedWebSocketPath)
+            : CocoaMQTTSocket()
+
+        let mqtt = CocoaMQTT(
+            clientID: server.clientId,
+            host: server.host.trimmingCharacters(in: .whitespacesAndNewlines),
+            port: port,
+            socket: socket
+        )
+        configure(mqtt)
+        client = .mqtt3(mqtt)
+
+        guard mqtt.connect() else {
+            client = nil
+            connectionState = .error("Unable to start MQTT 3.1.1 connection")
+            return
+        }
+    }
+
+    private func connectMQTT5(port: UInt16) {
+        let socket: CocoaMQTTSocketProtocol = server.useWebSocket
+            ? CocoaMQTTWebSocket(uri: server.normalizedWebSocketPath)
+            : CocoaMQTTSocket()
+
+        let mqtt = CocoaMQTT5(
+            clientID: server.clientId,
+            host: server.host.trimmingCharacters(in: .whitespacesAndNewlines),
+            port: port,
+            socket: socket
+        )
+        configure(mqtt)
+        client = .mqtt5(mqtt)
+
+        guard mqtt.connect() else {
+            client = nil
+            connectionState = .error("Unable to start MQTT 5.0 connection")
+            return
+        }
+    }
+
+    private func configure(_ mqtt: CocoaMQTT) {
+        mqtt.username = server.username.isEmpty ? nil : server.username
+        mqtt.password = server.password.isEmpty ? nil : server.password
+        mqtt.enableSSL = server.useTLS
+        mqtt.autoReconnect = true
+        mqtt.autoReconnectTimeInterval = 1
+        mqtt.maxAutoReconnectTimeInterval = 30
+        mqtt.cleanSession = true
+        mqtt.keepAlive = 60
+        mqtt.delegateQueue = .main
+        mqtt.delegate = self
+    }
+
+    private func configure(_ mqtt: CocoaMQTT5) {
+        mqtt.username = server.username.isEmpty ? nil : server.username
+        mqtt.password = server.password.isEmpty ? nil : server.password
+        mqtt.enableSSL = server.useTLS
+        mqtt.autoReconnect = true
+        mqtt.autoReconnectTimeInterval = 1
+        mqtt.maxAutoReconnectTimeInterval = 30
+        mqtt.cleanSession = true
+        mqtt.keepAlive = 60
+        mqtt.delegateQueue = .main
+        mqtt.delegate = self
+    }
+
+    func disconnect() {
+        tearDownClient()
+        connectionState = .disconnected
+    }
+
+    private func tearDownClient() {
+        let current = client
+        client = nil
+
+        switch current {
+        case .mqtt3(let mqtt):
+            mqtt.disconnect()
+        case .mqtt5(let mqtt):
+            mqtt.disconnect()
+        case nil:
+            break
+        }
+    }
+
+    @discardableResult
+    func publish(_ message: PublishDraft) -> Bool {
+        guard message.isValid, connectionState.isConnected else {
+            return false
+        }
+
+        let qos = CocoaMQTTQoS(rawValue: UInt8(message.qos)) ?? .qos0
+
+        switch client {
+        case .mqtt3(let mqtt):
+            return mqtt.publish(
+                message.topic,
+                withString: message.payload,
+                qos: qos,
+                retained: message.retain
+            ) >= 0
+
+        case .mqtt5(let mqtt):
+            return mqtt.publish(
+                message.topic,
+                withString: message.payload,
+                qos: qos,
+                DUP: false,
+                retained: message.retain,
+                properties: MqttPublishProperties()
+            ) >= 0
+
+        case nil:
+            return false
+        }
+    }
+
+    func subscribe(to topic: String, qos: Int = 0) {
+        guard connectionState.isConnected, TopicFilter.isValid(topic) else {
+            return
+        }
+
+        let mqttQoS = CocoaMQTTQoS(rawValue: UInt8(qos)) ?? .qos0
+
+        switch client {
+        case .mqtt3(let mqtt):
+            mqtt.subscribe(topic, qos: mqttQoS)
+        case .mqtt5(let mqtt):
+            mqtt.subscribe(topic, qos: mqttQoS)
+        case nil:
+            break
+        }
+    }
+
+    func unsubscribe(from topic: String) {
+        guard connectionState.isConnected else { return }
+
+        switch client {
+        case .mqtt3(let mqtt):
+            mqtt.unsubscribe(topic)
+        case .mqtt5(let mqtt):
+            mqtt.unsubscribe(topic)
+        case nil:
+            break
+        }
+    }
+
+    func clearMessages(matching topicFilter: String? = nil) {
+        guard let topicFilter else {
+            messages.clear()
+            return
+        }
+        messages.removeAll { TopicFilter.matches(topicFilter, topic: $0.topic) }
+    }
+
+    func restoreSubscriptions() {
+        for subscription in server.subscriptions {
+            subscribe(to: subscription.name, qos: subscription.qos)
+        }
+    }
+
+    func addMessage(
+        packetId: UInt16,
+        topic: String,
+        payload: [UInt8],
+        qos: Int,
+        retain: Bool,
+        duplicate: Bool
+    ) {
+        messages.append(
+            Message(
+                packetId: packetId == 0 ? nil : packetId,
+                topic: topic,
+                qos: qos,
+                payload: Data(payload),
+                retain: retain,
+                duplicate: duplicate
+            )
+        )
+
+        if UIApplication.shared.applicationState == .background {
+            let body = String(data: Data(payload), encoding: .utf8)
+                ?? "\(payload.count) bytes of binary data"
+            FlakeAppManager.shared.sendNotification(title: topic, body: body)
+        }
+    }
+
+    func isCurrent(_ mqtt: CocoaMQTT) -> Bool {
+        guard case .mqtt3(let current) = client else { return false }
+        return current === mqtt
+    }
+
+    func isCurrent(_ mqtt: CocoaMQTT5) -> Bool {
+        guard case .mqtt5(let current) = client else { return false }
+        return current === mqtt
+    }
+
+    var isInErrorState: Bool {
+        if case .error = connectionState { return true }
+        return false
+    }
+
+    func setConnectionState(_ state: ConnectionState) {
+        connectionState = state
     }
 }

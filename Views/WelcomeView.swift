@@ -1,117 +1,104 @@
-//
-//  WelcomeView.swift
-//  FlakeMQ
-//
-//  Created by Lsong on 2/18/25.
-//
-
 import SwiftUI
 
 struct WelcomeView: View {
-    @EnvironmentObject var appManager: FlakeAppManager
-    @Environment(\.dismiss) var dismiss
-    @State private var isLoading = false
-    
+    @EnvironmentObject private var appManager: FlakeAppManager
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var showingServer = false
+
     var body: some View {
         NavigationStack {
-            VStack {
+            VStack(spacing: 28) {
                 Spacer()
-                
+
                 VStack(spacing: 12) {
                     Image(systemName: "snowflake")
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: 60, height: 60)
-                        .foregroundStyle(.blue)
-                        .padding(.bottom, 8)
-                    
-                    VStack(spacing: 4) {
-                        Text("Welcome to FlakeMQ")
-                            .font(.title)
-                            .fontWeight(.semibold)
-                        Text("Lightweight & Powerful MQTT Client")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                    }
+                        .font(.system(size: 56, weight: .light))
+                        .foregroundStyle(.tint)
+
+                    Text("Welcome to FlakeMQ")
+                        .font(.largeTitle.bold())
+
+                    Text("A focused MQTT client for connecting, subscribing, inspecting, and publishing.")
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
-                
-                Spacer()
-                                
-                VStack(alignment: .leading, spacing: 24) {
-                    Label {
-                        VStack(alignment: .leading) {
-                            Text("Real-time Communication")
-                                .font(.headline)
-                            Text("Fast and reliable MQTT messaging")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "bolt.horizontal.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 24, height: 24)
-                            .foregroundStyle(.secondary)
-                            .padding(.trailing, 8)
-                    }
-                    
-                    Label {
-                        VStack(alignment: .leading) {
-                            Text("Topic Management")
-                                .font(.headline)
-                            Text("Easy subscribe and publish")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "list.bullet.rectangle.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 24, height: 24)
-                            .foregroundStyle(.secondary)
-                            .padding(.trailing, 8)
-                    }
-                    
-                    Label {
-                        VStack(alignment: .leading) {
-                            Text("Message Monitoring")
-                                .font(.headline)
-                            Text("Visual message tracking and history")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(systemName: "chart.bar.fill")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 24, height: 24)
-                            .foregroundStyle(.secondary)
-                            .padding(.trailing, 8)
-                    }
+
+                VStack(alignment: .leading, spacing: 18) {
+                    feature(
+                        "MQTT 3.1.1 & 5.0",
+                        "TCP, TLS and WebSocket transports",
+                        systemImage: "network"
+                    )
+                    feature(
+                        "Topic filters",
+                        "Correct + and # wildcard subscriptions",
+                        systemImage: "point.3.connected.trianglepath.dotted"
+                    )
+                    feature(
+                        "Message inspector",
+                        "QoS, retain, duplicate, JSON and binary payloads",
+                        systemImage: "doc.text.magnifyingglass"
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                
-                Spacer()
-                
-                Button {
-                    appManager.addDemoServers()
-                    dismiss()
-                } label: {
-                    Text(isLoading ? "Initializing..." : "Get Started")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                        .foregroundStyle(.background)
-                }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
                 .padding(.horizontal)
-                .disabled(isLoading)
+
+                Spacer()
+
+                VStack(spacing: 10) {
+                    if appManager.servers.isEmpty {
+                        Button {
+                            showingServer = true
+                        } label: {
+                            Text("Add Broker")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+
+                        Button("Try Public Brokers") {
+                            appManager.addDemoServers()
+                        }
+                        .buttonStyle(.bordered)
+                    } else {
+                        Button {
+                            dismiss()
+                        } label: {
+                            Text("Continue")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+
+                    Button("Not Now") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
             }
             .padding()
-            .navigationTitle("Welcome")
-            .toolbar(.hidden)
+            .sheet(isPresented: $showingServer) {
+                ServerFormView { server in
+                    appManager.addServer(server)
+                }
+            }
+        }
+    }
+
+    private func feature(_ title: String, _ subtitle: String, systemImage: String) -> some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: systemImage)
+                .frame(width: 28)
+                .foregroundStyle(.tint)
         }
     }
 }

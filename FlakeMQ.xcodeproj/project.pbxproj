@@ -10,7 +10,6 @@
 		975DAE8C2D647CE1002CE519 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975DAE8B2D647CE1002CE519 /* WelcomeView.swift */; };
 		975DAE8E2D648021002CE519 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975DAE8D2D648021002CE519 /* AboutView.swift */; };
 		975DAE902D64817A002CE519 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975DAE8F2D64817A002CE519 /* SettingsView.swift */; };
-		976E17DE2D7A9D47000DE31A /* SwiftUIX in Frameworks */ = {isa = PBXBuildFile; productRef = 976E17DD2D7A9D47000DE31A /* SwiftUIX */; };
 		97967B632D350ACE001D17F9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97967B622D350ACE001D17F9 /* Assets.xcassets */; };
 		97967B6C2D3644DA001D17F9 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97967B6B2D3643F4001D17F9 /* MainView.swift */; };
 		97967B6D2D3644DF001D17F9 /* ServerDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97967B6A2D3643E1001D17F9 /* ServerDetailView.swift */; };
@@ -69,7 +68,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				976E17DE2D7A9D47000DE31A /* SwiftUIX in Frameworks */,
 				97BF6BBE2D2F993700EA302F /* CocoaMQTTWebSocket in Frameworks */,
 				97BF6BBC2D2F993700EA302F /* CocoaMQTT in Frameworks */,
 			);
@@ -161,7 +159,6 @@
 			packageProductDependencies = (
 				97BF6BBB2D2F993700EA302F /* CocoaMQTT */,
 				97BF6BBD2D2F993700EA302F /* CocoaMQTTWebSocket */,
-				976E17DD2D7A9D47000DE31A /* SwiftUIX */,
 			);
 			productName = FlakeMQ;
 			productReference = D10FB28326887313004DC992 /* FlakeMQ.app */;
@@ -193,7 +190,6 @@
 			mainGroup = D10FB27A26887313004DC992;
 			packageReferences = (
 				97BF6BBA2D2F993700EA302F /* XCRemoteSwiftPackageReference "CocoaMQTT" */,
-				976E17DC2D7A9D47000DE31A /* XCRemoteSwiftPackageReference "swift-uix" */,
 			);
 			productRefGroup = D10FB28426887313004DC992 /* Products */;
 			projectDirPath = "";
@@ -462,30 +458,17 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		976E17DC2D7A9D47000DE31A /* XCRemoteSwiftPackageReference "swift-uix" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/lsongdev/swift-uix.git";
-			requirement = {
-				branch = master;
-				kind = branch;
-			};
-		};
 		97BF6BBA2D2F993700EA302F /* XCRemoteSwiftPackageReference "CocoaMQTT" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/emqx/CocoaMQTT";
 			requirement = {
 				kind = exactVersion;
-				version = 2.1.6;
+				version = 2.4.1;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		976E17DD2D7A9D47000DE31A /* SwiftUIX */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 976E17DC2D7A9D47000DE31A /* XCRemoteSwiftPackageReference "swift-uix" */;
-			productName = SwiftUIX;
-		};
 		97BF6BBB2D2F993700EA302F /* CocoaMQTT */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 97BF6BBA2D2F993700EA302F /* XCRemoteSwiftPackageReference "CocoaMQTT" */;

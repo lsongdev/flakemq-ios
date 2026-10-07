@@ -1,45 +1,58 @@
-//
-//  MessagesView.swift
-//  MQTTClient
-//
-//  Created by Lsong on 1/14/25.
-//
 import SwiftUI
 
 struct MessagesView: View {
     let subscription: Subscription
-    let messages: CircularBuffer<Message>
-    let onPublish: (Message) -> Void
-    @State private var formData: Message = Message.empty
+    @ObservedObject var client: MQTTClient
+
+    @State private var draft = PublishDraft.empty
     @State private var showPublishSheet = false
     @State private var isScrolledToBottom = true
 
-    // 过滤当前主题的消息
     private var topicMessages: [Message] {
-        messages.filter { $0.topic == subscription.name }
+        client.messages.filter {
+            TopicFilter.matches(subscription.name, topic: $0.topic)
+        }
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
-            // Messages List
             ScrollViewReader { proxy in
                 ZStack(alignment: .bottomTrailing) {
                     List {
+                        if topicMessages.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "tray")
+                                    .font(.title2)
+                                    .foregroundStyle(.secondary)
+                                Text("Waiting for messages")
+                                    .font(.headline)
+                                Text(subscription.name)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 32)
+                            .listRowSeparator(.hidden)
+                        }
+
                         ForEach(topicMessages) { message in
                             MessageView(message: message)
-                                .listRowInsets(EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8))
+                                .listRowInsets(
+                                    EdgeInsets(top: 4, leading: 8, bottom: 4, trailing: 8)
+                                )
                                 .listRowBackground(Color.clear)
                                 .id(message.id)
                         }
                         .listRowSeparator(.hidden)
                     }
-                    .onChange(of: messages) { _ in
-                        if isScrolledToBottom {
-                            withAnimation {
-                                if let lastId = topicMessages.last?.id {
-                                    proxy.scrollTo(lastId, anchor: .bottom)
-                                }
-                            }
+                    .listStyle(.plain)
+                    .onChange(of: client.messages) { _ in
+                        guard isScrolledToBottom,
+                              let lastId = topicMessages.last?.id else {
+                            return
+                        }
+                        withAnimation {
+                            proxy.scrollTo(lastId, anchor: .bottom)
                         }
                     }
                     .simultaneousGesture(
@@ -47,96 +60,109 @@ struct MessagesView: View {
                             isScrolledToBottom = false
                         }
                     )
-                    .listStyle(PlainListStyle())
-                    .background(Color(.systemGroupedBackground))
-                    
-                    // Scroll to Bottom Button
+
                     if !isScrolledToBottom && !topicMessages.isEmpty {
                         Button {
+                            guard let lastId = topicMessages.last?.id else { return }
                             withAnimation {
-                                if let lastId = topicMessages.last?.id {
-                                    proxy.scrollTo(lastId, anchor: .bottom)
-                                    isScrolledToBottom = true
-                                }
+                                proxy.scrollTo(lastId, anchor: .bottom)
+                                isScrolledToBottom = true
                             }
                         } label: {
                             Image(systemName: "arrow.down.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(.accentColor)
-                                .background(
-                                    Circle()
-                                        .fill(Color(.systemBackground))
-                                        .shadow(radius: 2)
-                                )
+                                .padding(4)
                         }
-                        .padding([.trailing, .bottom], 16)
-                        .transition(.scale.combined(with: .opacity))
+                        .background(.regularMaterial, in: Circle())
+                        .padding(16)
                     }
                 }
             }
-            
-            // Publisher Panel
-            VStack(spacing: 0) {
-                Divider()
-                HStack(spacing: 12) {
-                    // Message Input Area
-                    HStack(spacing: 8) {
-                        Menu {
-                            Picker("QoS", selection: $formData.qos) {
-                                Text("At most once (0)").tag(0)
-                                Text("At least once (1)").tag(1)
-                                Text("Exactly once (2)").tag(2)
-                            }
-                            Toggle("Retain", isOn: $formData.retain)
-                        } label: {
-                            Image(systemName: "line.3.horizontal")
-                                .foregroundColor(.gray)
-                        }
-                        
-                        TextField("Type message", text: $formData.payload)
-                            .textFieldStyle(PlainTextFieldStyle())
-                            .textInputAutocapitalization(.never)
-                        
-                        Button(action: { showPublishSheet = true }) {
-                            Image(systemName: "chevron.up")
-                                .foregroundColor(.gray)
-                        }
-                        
-                        Button(action: {
-                            guard formData.isValid else {
-                                return
-                            }
-                            onPublish(formData)
-                            formData.payload = ""
-                            isScrolledToBottom = true
-                        }) {
-                            Image(systemName: "paperplane.fill")
-                                .foregroundColor(formData.isValid ? .accentColor : .gray)
-                        }
-                        .disabled(!formData.isValid)
-                    }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(.systemGray6))
-                    )
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-            }
-            .background(Color(.systemBackground))
-            .onAppear {
-                formData.topic = subscription.name
-            }
+
+            composer
         }
         .navigationTitle(subscription.name)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if TopicFilter.isValidTopicName(subscription.name) {
+                draft.topic = subscription.name
+            }
+        }
         .sheet(isPresented: $showPublishSheet) {
-            PublishView(
-                message: formData,
-                onPublish: onPublish
-            )
+            PublishView(draft: draft) { message in
+                let sent = client.publish(message)
+                if sent {
+                    draft = message
+                    draft.payload = ""
+                    isScrolledToBottom = true
+                }
+                return sent
+            }
             .presentationDetents([.medium, .large])
         }
+    }
+
+    private var composer: some View {
+        VStack(spacing: 0) {
+            Divider()
+
+            if !TopicFilter.isValidTopicName(draft.topic) {
+                HStack {
+                    Image(systemName: "info.circle")
+                    Text("This is a wildcard subscription. Choose a concrete publish topic.")
+                    Spacer()
+                    Button("Open") {
+                        showPublishSheet = true
+                    }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.top, 8)
+            }
+
+            HStack(spacing: 10) {
+                Menu {
+                    Picker("QoS", selection: $draft.qos) {
+                        Text("QoS 0").tag(0)
+                        Text("QoS 1").tag(1)
+                        Text("QoS 2").tag(2)
+                    }
+                    Toggle("Retain", isOn: $draft.retain)
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .frame(width: 28, height: 28)
+                }
+
+                TextField("Message", text: $draft.payload)
+                    .textInputAutocapitalization(.never)
+                    .submitLabel(.send)
+                    .onSubmit(sendQuickMessage)
+
+                Button {
+                    showPublishSheet = true
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                }
+
+                Button(action: sendQuickMessage) {
+                    Image(systemName: "paperplane.fill")
+                }
+                .disabled(!canSend)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+            .background(.bar)
+        }
+    }
+
+    private var canSend: Bool {
+        draft.isValid && client.connectionState.isConnected
+    }
+
+    private func sendQuickMessage() {
+        guard canSend, client.publish(draft) else { return }
+        draft.payload = ""
+        isScrolledToBottom = true
     }
 }
