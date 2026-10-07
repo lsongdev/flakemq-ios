@@ -18,7 +18,7 @@ struct ServerDescription: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String = ""
     var host: String = ""
-    var port: String = "1883"
+    var port: String = ""
     var clientId: String = ""
     var useTLS: Bool = false
     var username: String = ""
@@ -111,7 +111,7 @@ struct ServerDescription: Identifiable, Codable, Equatable {
         id: UUID = UUID(),
         name: String = "",
         host: String = "",
-        port: String = "1883",
+        port: String = "",
         clientId: String = "",
         useTLS: Bool = false,
         username: String = "",
